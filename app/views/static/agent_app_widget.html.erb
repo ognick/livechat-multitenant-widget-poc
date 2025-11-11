@@ -1,0 +1,287 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Agent App Widget</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://unpkg.com/@livechat/agent-app-sdk@1.12.0/dist/agentapp.umd.min.js"></script>
+    <style>
+        body { 
+            font-family: system-ui, Arial, sans-serif; 
+            margin: 0; 
+            padding: 12px; 
+        }
+        .info-item { 
+            margin: 12px 0; 
+            padding: 8px; 
+            background: #e7f3ff; 
+            border-radius: 4px; 
+        }
+        .info-item.error { 
+            background: #ffe7e7; 
+            color: #d00; 
+        }
+        .info-label { 
+            font-weight: bold; 
+        }
+        #root { 
+            margin-top: 12px; 
+        }
+        button { 
+            margin-top: 12px; 
+            padding: 8px 16px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+        }
+        button:hover { 
+            background: #0056b3; 
+        }
+    </style>
+</head>
+<body>
+<div id="root">Loading…</div>
+
+<script>
+    const root = document.getElementById("root");
+    const CLIENT_ID = '<%= @client_id %>';
+    const SESSION_STORAGE_KEY = 'agent_session_id';
+    const SESSION_EXPIRES_STORAGE_KEY = 'agent_session_expires_at';
+    
+    let currentChatId = null;
+    let currentThreadId = null;
+    let currentEntityId = null;
+    let agentSessionId = null;
+    let agentSessionExpiresAt = null;
+    
+    // Load session from localStorage on page load
+    function loadSessionFromStorage() {
+        try {
+            const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+            const storedExpiresAt = localStorage.getItem(SESSION_EXPIRES_STORAGE_KEY);
+            
+            if (storedSessionId && storedExpiresAt) {
+                const expiresAt = parseInt(storedExpiresAt, 10);
+                // Check if session is still valid (more than 1 minute remaining)
+                if (expiresAt - Date.now() > 60000) {
+                    agentSessionId = storedSessionId;
+                    agentSessionExpiresAt = expiresAt;
+                    console.log('Session loaded from localStorage:', agentSessionId, 'expires at:', new Date(agentSessionExpiresAt));
+                } else {
+                    // Session expired, clear it
+                    clearSessionFromStorage();
+                }
+            }
+        } catch (e) {
+            console.error('Error loading session from localStorage:', e);
+        }
+    }
+    
+    // Save session to localStorage
+    function saveSessionToStorage(sessionId, expiresIn) {
+        try {
+            const expiresAt = Date.now() + (expiresIn * 1000);
+            localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+            localStorage.setItem(SESSION_EXPIRES_STORAGE_KEY, expiresAt.toString());
+            agentSessionId = sessionId;
+            agentSessionExpiresAt = expiresAt;
+            console.log('Session saved to localStorage:', sessionId, 'expires at:', new Date(expiresAt));
+        } catch (e) {
+            console.error('Error saving session to localStorage:', e);
+        }
+    }
+    
+    // Clear session from localStorage
+    function clearSessionFromStorage() {
+        try {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+            localStorage.removeItem(SESSION_EXPIRES_STORAGE_KEY);
+            agentSessionId = null;
+            agentSessionExpiresAt = null;
+            console.log('Session cleared from localStorage');
+        } catch (e) {
+            console.error('Error clearing session from localStorage:', e);
+        }
+    }
+    
+    // Load session on page load
+    loadSessionFromStorage();
+    
+    function createInfoItem(label, value, isError = false) {
+        const className = isError ? 'info-item error' : 'info-item';
+        return `<div class="${className}"><span class="info-label">${label}:</span> ${value || 'Not available'}</div>`;
+    }
+    
+    function displayUserInPopup(user, popup) {
+        if (!user || !popup || popup.closed) {
+            return;
+        }
+        
+        try {
+            const popupDoc = popup.document;
+            const popupBody = popupDoc.body;
+            
+            if (popupBody) {
+                popupBody.innerHTML = 
+                    '<div style="font-family: system-ui, Arial, sans-serif; padding: 20px;">' +
+                    '<h2 style="margin-top: 0;">User Data</h2>' +
+                    '<div style="margin: 12px 0; padding: 8px; background: #e7f3ff; border-radius: 4px;"><span style="font-weight: bold;">User ID:</span> ' + (user.id || 'N/A') + '</div>' +
+                    '<div style="margin: 12px 0; padding: 8px; background: #e7f3ff; border-radius: 4px;"><span style="font-weight: bold;">Username:</span> ' + (user.username || 'N/A') + '</div>' +
+                    '<div style="margin: 12px 0; padding: 8px; background: #e7f3ff; border-radius: 4px;"><span style="font-weight: bold;">Email:</span> ' + (user.email || 'N/A') + '</div>' +
+                    '</div>';
+            }
+        } catch (e) {
+            console.error('Error displaying user in popup:', e);
+        }
+    }
+    
+    function updateFromProfile(profile) {
+        currentChatId = profile?.chat?.chat_id || profile?.chatId || null;
+        currentThreadId = profile?.chat?.thread_id || profile?.threadId || null;
+        currentEntityId = profile?.id || profile?.entity_id || profile?.entityId ||
+                         profile?.customer?.id || profile?.customer?.entity_id ||
+                         profile?.user?.id || profile?.user?.entity_id || null;
+        const casinoUrl = profile?.customVariables?.casino_url || profile?.sessionVariables?.casino_url || null;
+        
+        console.log('Chat ID:', currentChatId, 'Thread ID:', currentThreadId, 'Entity ID:', currentEntityId, 'Casino URL:', casinoUrl);
+        
+        root.innerHTML = 
+            createInfoItem('Casino URL', casinoUrl, !casinoUrl) +
+            createInfoItem('Entity ID', currentEntityId, !currentEntityId) +
+            createInfoItem('Chat ID', currentChatId, !currentChatId) +
+            createInfoItem('Thread ID', currentThreadId, !currentThreadId) +
+            '<button id="refreshBtn">Refresh</button><br>' +
+            '<button id="getUserDataBtn">Get User Data</button>';
+        
+        document.getElementById('refreshBtn').addEventListener('click', () => {
+            clearSessionFromStorage();
+            window.location.reload();
+        });
+        document.getElementById('getUserDataBtn').addEventListener('click', () => handleGetUserData(casinoUrl));
+    }
+    
+    function isSessionValid() {
+        if (!agentSessionId || !agentSessionExpiresAt) {
+            loadSessionFromStorage();
+        }
+        
+        if (!agentSessionId || !agentSessionExpiresAt) {
+            return false;
+        }
+        
+        const remaining = agentSessionExpiresAt - Date.now();
+        if (remaining <= 60000) {
+            clearSessionFromStorage();
+            return false;
+        }
+        
+        return true;
+    }
+    
+    function setupPopupMessageListener(popup, casinoUrl) {
+        const casinoOrigin = new URL(casinoUrl).origin;
+        let messageHandled = false;
+        
+        const messageHandler = function(event) {
+            if (messageHandled || event.origin !== casinoOrigin && event.origin !== window.location.origin) {
+                return;
+            }
+            
+            const data = event.data;
+            if (!data || (!data.user && !data.error)) {
+                return;
+            }
+            
+            messageHandled = true;
+            window.removeEventListener('message', messageHandler);
+            
+            if (data.error) {
+                if (data.error.includes('Unauthorized') || data.error.includes('session')) {
+                    clearSessionFromStorage();
+                    if (popup && !popup.closed) {
+                        popup.close();
+                    }
+                    handleGetUserData(casinoUrl);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } else if (data.user) {
+                if (data.session_token && data.session_expires_in) {
+                    saveSessionToStorage(data.session_token, data.session_expires_in);
+                }
+                displayUserInPopup(data.user, popup);
+            }
+        };
+        
+        window.addEventListener('message', messageHandler);
+    }
+    
+    function fetchUserDataWithSession(casinoUrl) {
+        if (!casinoUrl || !currentChatId || !currentThreadId || !currentEntityId) {
+            alert('Error: Required data is not available');
+            return;
+        }
+        
+        const baseUrl = casinoUrl.endsWith('/') ? casinoUrl.slice(0, -1) : casinoUrl;
+        const params = new URLSearchParams({
+            session_token: agentSessionId,
+            chat_id: currentChatId,
+            thread_id: currentThreadId,
+            entity_id: currentEntityId
+        });
+        
+        const popup = window.open(baseUrl + '/get-user-data?' + params.toString(), 'UserData', 'width=600,height=400,scrollbars=yes');
+        setupPopupMessageListener(popup, casinoUrl);
+    }
+    
+    function handleGetUserData(casinoUrl) {
+        if (!casinoUrl || !currentChatId || !currentThreadId || !currentEntityId) {
+            alert('Error: Required data is not available');
+            return;
+        }
+        
+        if (isSessionValid()) {
+            fetchUserDataWithSession(casinoUrl);
+            return;
+        }
+        
+        clearSessionFromStorage();
+        
+        const baseUrl = casinoUrl.endsWith('/') ? casinoUrl.slice(0, -1) : casinoUrl;
+        const redirectPath = '/get-user-data?' + new URLSearchParams({
+            chat_id: currentChatId,
+            thread_id: currentThreadId,
+            entity_id: currentEntityId
+        }).toString();
+        const redirectUri = encodeURIComponent(baseUrl + redirectPath);
+        const href = `https://accounts.livechat.com/?response_type=token&client_id=${CLIENT_ID}&redirect_uri=${redirectUri}`;
+        
+        const popup = window.open(href, 'LiveChatAuth', 'width=600,height=700,scrollbars=yes');
+        setupPopupMessageListener(popup, casinoUrl);
+    }
+    
+    LiveChat.createDetailsWidget().then(function(widget) {
+        function displayCustomerData(profile) {
+            updateFromProfile(profile);
+        }
+        
+        widget.on("customer_profile", function(profile) {
+            displayCustomerData(profile);
+        });
+        
+        widget.on("chat", function(chat) {
+            console.log('Chat event:', chat);
+            const profile = widget.getCustomerProfile();
+            updateFromProfile(profile);
+        });
+        
+        const initialProfile = widget.getCustomerProfile();
+        displayCustomerData(initialProfile);
+    }).catch(function(error) {
+        root.innerHTML = '<div class="info-item error">Error: ' + error.message + '</div>';
+    });
+</script>
+</body>
+</html>

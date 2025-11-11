@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Casino</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1>Casino</h1>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="card">
+        <% if current_user %>
+          <p class="small">ID: <%= current_user.id %></p>
+          <p class="small">Name: <%= current_user.username %></p>
+          <p class="small">Email: <%= current_user.email %></p>
+          <button id="clear-cookie-btn">New User</button>
+        <% else %>
+          <p>No user cookie found.</p>
+        <% end %>
+      </div>
+    </main>
+
+    <script>
+      // New User button: keep your existing behavior
+      document.addEventListener("DOMContentLoaded", () => {
+        const btn = document.getElementById("clear-cookie-btn");
+        if (btn) {
+          btn.addEventListener("click", () => {
+            document.cookie = "user_id=x; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+            location.reload();
+          });
+        }
+      });
+    </script>
+
+    <!-- LiveChat widget with Custom Identity Provider -->
+    <script>
+      window.__lc = window.__lc || {};
+      window.__lc.license = 19362554;
+      window.__lc.integration_name = "manual_channels";
+      window.__lc.product_name = "livechat";
+
+      (function() {
+        let tokenPromise = null;
+        let cachedToken = null;
+
+        function fetchToken() {
+          // Build API URL with current user's UUID (UUID is URL-safe in query)
+          const apiUrl = "/livechat/customer-token";
+          tokenPromise = fetch(apiUrl, { method: "GET", headers: { "Content-Type": "application/json" } })
+            .then(resp => {
+              if (!resp.ok) throw new Error("Failed to fetch token");
+              return resp.json();
+            })
+            .then(data => {
+              cachedToken = data;
+              tokenPromise = null;
+              window.LiveChatWidget.call('update_session_variables', {casino_url:window.location.href });
+              return data;
+            })
+            .catch(err => {
+              cachedToken = null;
+              tokenPromise = null;
+              throw err;
+            });
+          return tokenPromise;
+        }
+
+        window.__lc.custom_identity_provider = function() {
+          return {
+            getToken: () => {
+              if (cachedToken) return Promise.resolve(cachedToken);
+              if (tokenPromise) return tokenPromise;
+              return fetchToken();
+            },
+            getFreshToken: () => {
+              cachedToken = null;
+              return fetchToken();
+            },
+            hasToken: () => Promise.resolve(!!cachedToken),
+            invalidate: () => { cachedToken = null; tokenPromise = null; return Promise.resolve(); }
+          };
+        };
+      })();
+
+      // Minimal loader
+      (function(n,t,c){
+        function i(n){return e._h?e._h.apply(null,n):e._q.push(n)}
+        var e={_q:[],_h:null,_v:"2.0",
+          on:function(){i(["on",c.call(arguments)])},
+          once:function(){i(["once",c.call(arguments)])},
+          off:function(){i(["off",c.call(arguments)])},
+          get:function(){if(!e._h)throw new Error("[LiveChatWidget] You can't use getters before load.");return i(["get",c.call(arguments)])},
+          call:function(){i(["call",c.call(arguments)])},
+          init:function(){var n=t.createElement("script");n.async=!0;n.type="text/javascript";n.src="https://cdn.livechatinc.com/tracking.js";t.head.appendChild(n)}
+        };
+        e.init(); n.LiveChatWidget=n.LiveChatWidget||e
+      })(window,document,[].slice);
+    </script>
+    <noscript>
+      <a href="https://www.livechat.com/chat-with/19362554/" rel="nofollow">Chat with us</a>,
+      powered by <a href="https://www.livechat.com/?welcome" rel="noopener nofollow" target="_blank">LiveChat</a>
+    </noscript>
+  </body>
+</html>
